@@ -217,6 +217,7 @@ class runbot_repo(osv.osv):
             help="Community addon repos which need to be present to run tests."),
         'token': fields.char("Github token", groups="runbot.group_runbot_admin"),
         'group_ids': fields.many2many('res.groups', string='Limited to groups'),
+        'executable': fields.char('Executable'),
     }
     _defaults = {
         'mode': 'poll',
@@ -933,9 +934,11 @@ class runbot_build(osv.osv):
                 if os.path.isfile(server_path):
                     break
 
+
             # commandline
             cmd = [
-                build._path(server_path),
+                build.repo_id.executable or sys.executable,
+                server_path,
                 "--xmlrpc-port=%d" % build.port,
             ]
             # options
