@@ -214,6 +214,7 @@ class runbot_repo(osv.osv):
             help="Community addon repos which need to be present to run tests."),
         'token': fields.char("Github token"),
         'group_ids': fields.many2many('res.groups', string='Limited to groups'),
+        'executable': fields.char('Executable'),
     }
     _defaults = {
         'mode': 'poll',
@@ -862,9 +863,10 @@ class runbot_build(osv.osv):
             if not os.path.isfile(server_path):
                 server_path = build.path("bin/openerp-server.py")
 
+
             # commandline
             cmd = [
-                sys.executable,
+                build.repo_id.executable or sys.executable,
                 server_path,
                 "--xmlrpc-port=%d" % build.port,
             ]
