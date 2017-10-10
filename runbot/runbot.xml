@@ -15,9 +15,9 @@
                         <h1><field name="name" class="oe_inline"/></h1>
                         <button name="update" type="object" string="Update" groups="runbot.group_runbot_admin"/>
                         <button name="cron" type="object" string="Cron" groups="runbot.group_runbot_admin"/>
-                        <button name="killall" type="object" string="Killall" groups="runbot.group_runbot_admin"/>
                     </div>
                     <group string="Params">
+                        <field name="sequence"/>
                         <field name="mode"/>
                         <field name="nginx"/>
                         <field name="duplicate_id"/>
@@ -37,6 +37,7 @@
         <field name="model">runbot.repo</field>
         <field name="arch" type="xml">
             <tree string="repos">
+                <field name="sequence" widget="handle"/>
                 <field name="name"/>
                 <field name="mode"/>
             </tree>
@@ -187,6 +188,7 @@
                 <filter string="Running" domain="[('state','=', 'running')]"/>
                 <filter string="Done" domain="[('state','=','done')]"/>
                 <filter string="Duplicate" domain="[('state','=', 'duplicate')]"/>
+                <filter string="Deathrow" domain="[('state','=', 'deathrow')]"/>
                 <separator />
                 <group expand="0" string="Group By...">
                     <filter string="Repo" domain="[]" context="{'group_by':'repo_id'}"/>
@@ -254,13 +256,18 @@
     </template>
 
     <template id="runbot.build_name">
+        <t t-if="bu['state']=='deathrow'"><i class="text-info fa fa-crosshairs"/> killing</t>
         <t t-if="bu['state']=='pending'"><i class="text-default fa fa-pause"/> pending</t>
-        <t t-if="bu['state']=='testing'"><i class="text-info fa fa-spinner"/> testing <t t-esc="bu['job']"/> <small t-if="not hide_time"><t t-esc="bu['job_time']"/></small></t>
+        <t t-if="bu['state']=='testing'">
+          <t t-set="textklass" t-value="dict(ko='danger', warn='warning').get(bu['guess_result'], 'info')"/>
+          <span t-attf-class="text-{{textklass}}"><i class="fa fa-spinner fa-spin"/> testing</span> <t t-esc="bu['job']"/> <small t-if="not hide_time"><t t-esc="bu['job_time']"/></small>
+        </t>
         <t t-if="bu['result']=='ok'"><i class="text-success fa fa-thumbs-up"/><small t-if="not hide_time"> age <t t-esc="bu['job_age']"/> time <t t-esc="bu['job_time']"/></small></t>
         <t t-if="bu['result']=='ko'"><i class="text-danger fa fa-thumbs-down"/><small t-if="not hide_time"> age <t t-esc="bu['job_age']"/> time <t t-esc="bu['job_time']"/></small></t>
         <t t-if="bu['result']=='warn'"><i class="text-warning fa fa-warning"/><small t-if="not hide_time"> age <t t-esc="bu['job_age']"/> time <t t-esc="bu['job_time']"/></small></t>
         <t t-if="bu['result']=='skipped'"><i class="text-danger fa fa-ban"/> skipped</t>
         <t t-if="bu['result']=='killed'"><i class="text-danger fa fa-times"/> killed</t>
+        <t t-if="bu['result']=='manually_killed'"><i class="text-danger fa fa-times"/> manually killed</t>
 
         <t t-if="bu['server_match'] in ('default', 'fuzzy')">
             <i class="text-warning fa fa-question-circle fa-fw"
@@ -276,7 +283,7 @@
                 <a t-attf-href="https://#{repo.base}/commit/#{bu['name']}" class="btn btn-default"><i class="fa fa-github"/></a>
                 <button class="btn btn-default dropdown-toggle" data-toggle="dropdown"><i class="fa fa-cog"/><span class="caret"></span></button>
                 <ul class="dropdown-menu" role="menu">
-                    <li t-if="bu['result']=='skipped'">
+                    <li t-if="bu['result']=='skipped'" groups="runbot.group_runbot_admin">
                         <a href="#" class="runbot-rebuild" t-att-data-runbot-build="bu['id']">Force Build <i class="fa fa-level-up"></i></a>
                     </li>
                     <t t-if="bu['state']=='running'">
@@ -284,13 +291,17 @@
                         <li><a t-attf-href="http://{{bu['domain']}}/?db={{bu['real_dest']}}-base">Connect base <i class="fa fa-sign-in"></i></a></li>
                         <li><a t-attf-href="http://{{bu['domain']}}/">Connect <i class="fa fa-sign-in"></i></a></li>
                     </t>
-                    <li t-if="bu['state'] in ['done','running'] and bu_index==0">
+                    <li t-if="bu['state'] in ['done','running','deathrow'] and bu_index==0" groups="runbot.group_user">
                         <a href="#" class="runbot-rebuild" t-att-data-runbot-build="bu['id']">Rebuild <i class="fa fa-refresh"/></a>
+                    </li>
+                    <li t-if="bu['state'] in ['pending','testing','running']" groups="runbot.group_user">
+                        <a href="#" class="runbot-kill" t-att-data-runbot-build="bu['id']">Kill <i class="fa fa-crosshairs"/></a>
                     </li>
                     <li t-if="bu['state']!='testing' and bu['state']!='pending'" class="divider"></li>
                     <li><a t-attf-href="/runbot/build/{{bu['id']}}">Logs <i class="fa fa-file-text-o"/></a></li>
                     <li t-if="bu['host']"><a t-attf-href="http://{{bu['host']}}/runbot/static/build/#{bu['real_dest']}/logs/job_10_test_base.txt">Full base logs <i class="fa fa-file-text-o"/></a></li>
                     <li t-if="bu['host']"><a t-attf-href="http://{{bu['host']}}/runbot/static/build/#{bu['real_dest']}/logs/job_20_test_all.txt">Full all logs <i class="fa fa-file-text-o"/></a></li>
+                    <li t-if="bu['coverage'] and bu['host']"><a t-attf-href="http://{{bu['host']}}/runbot/static/build/#{bu['real_dest']}/coverage/index.html">Coverage <i class="fa fa-file-text-o"/></a></li>
                     <li t-if="bu['state']!='pending'" class="divider"></li>
                     <li><a t-attf-href="{{br['branch'].branch_url}}">Branch or pull <i class="fa fa-github"/></a></li>
                     <li><a t-attf-href="https://{{repo.base}}/commit/{{bu['name']}}">Commit <i class="fa fa-github"/></a></li>
@@ -412,11 +423,12 @@
                             <t t-foreach="br['builds']" t-as="bu">
                                 <t t-if="bu['state']=='pending'"><t t-set="klass">default</t></t>
                                 <t t-if="bu['state']=='testing'"><t t-set="klass">info</t></t>
+                                <t t-if="bu['state']=='deathrow'"><t t-set="klass">default</t></t>
                                 <t t-if="bu['state'] in ['running','done'] and bu['result'] == 'ko'"><t t-set="klass">danger</t></t>
                                 <t t-if="bu['state'] in ['running','done'] and bu['result'] == 'warn'"><t t-set="klass">warning</t></t>
                                 <t t-if="bu['state'] in ['running','done'] and bu['result'] == 'ok'"><t t-set="klass">success</t></t>
                                 <t t-if="bu['state'] in ['running','done'] and bu['result'] == 'skipped'"><t t-set="klass">default</t></t>
-                                <t t-if="bu['state'] in ['running','done'] and bu['result'] == 'killed'"><t t-set="klass">killed</t></t>
+                                <t t-if="bu['state'] in ['running','done'] and bu['result'] in ['killed', 'manually_killed']"><t t-set="klass">killed</t></t>
                                 <td t-attf-class="{{klass}}">
                                    <t t-call="runbot.build_button"><t t-set="klass">btn-group-sm</t></t>
                                    <t t-if="bu['subject']">
@@ -488,11 +500,12 @@
                     <t t-foreach="br['builds']" t-as="bu">
                       <t t-if="bu['state']=='pending'"><t t-set="klass">default</t></t>
                       <t t-if="bu['state']=='testing'"><t t-set="klass">info</t></t>
+                      <t t-if="bu['state']=='deathrow'"><t t-set="klass">default</t></t>
                       <t t-if="bu['state'] in ['running','done'] and bu['result'] == 'ko'"><t t-set="klass">danger</t></t>
                       <t t-if="bu['state'] in ['running','done'] and bu['result'] == 'warn'"><t t-set="klass">warning</t></t>
                       <t t-if="bu['state'] in ['running','done'] and bu['result'] == 'ok'"><t t-set="klass">success</t></t>
                       <t t-if="bu['state'] in ['running','done'] and bu['result'] == 'skipped'"><t t-set="klass">default</t></t>
-                      <t t-if="bu['state'] in ['running','done'] and bu['result'] == 'killed'"><t t-set="klass">killed</t></t>
+                      <t t-if="bu['state'] in ['running','done'] and bu['result'] in ['killed', 'manually_killed']"><t t-set="klass">killed</t></t>
                       <div t-attf-class="bg-{{klass}} col-md-4">
                         <i class="fa fa-at"></i>
                         <t t-esc="bu['author']"/>
@@ -571,7 +584,7 @@
                                 </div>
                               </form>
 
-                              <form class="navbar-form navbar-left form-inline" t-attf-action="/runbot/build/#{build['id']}/force" method='POST' t-if="request.params.get('ask_rebuild')">
+                              <form class="navbar-form navbar-left form-inline" t-attf-action="/runbot/build/#{build['id']}/force" method='POST' t-if="request.params.get('ask_rebuild')" groups="runbot.group_user">
                                 <a href='#' class="btn btn-danger runbot-rebuild" t-attf-data-runbot-build="#{build['id']}" > <i class='fa fa-refresh'/> Force Rebuild</a>
                               </form>
 
@@ -605,6 +618,7 @@
                             Author: <t t-esc="build['author']"/><br/>
                             Committer: <t t-esc="build['committer']"/><br/>
                         </p>
+                        <p t-if="build['duplicate_of']">Duplicate of <a t-attf-href="/runbot/build/#{build['duplicate_of'].id}"><t t-esc="build['duplicate_of'].dest"/></a></p>
                         <table class="table table-condensed table-striped">
                         <tr>
                             <th>Date</th>
@@ -613,12 +627,12 @@
                             <th>Message</th>
                         </tr>
                         <t t-foreach="logs" t-as="l">
-                            <tr>
+                            <tr t-att-class="dict(ERROR='danger', WARNING='warning').get(l.level)">
                                 <td style="white-space: nowrap;"><t t-esc="l.create_date"/></td>
                                 <td><b t-esc="l.level"/></td>
                                 <td><t t-esc="l.type"/></td>
                                 <td>
-                                    <a t-attf-href="https://{{repo.base}}/blob/{{build['name']}}/{{l.path}}#L{{l.line}}"><t t-esc="l.name"/>:<t t-esc="l.line"/></a> <t t-esc="l.func"/>
+                                    <a t-if="l.type != 'runbot'" t-attf-href="https://{{repo.base}}/blob/{{build['name']}}/{{l.path}}#L{{l.line}}"><t t-esc="l.name"/>:<t t-esc="l.line"/></a> <t t-esc="l.func"/>
                                     <t t-if="'\n' not in l.message"><t t-esc="l.message"/></t>
                                     <pre t-if="'\n' in l.message" style="margin:0;padding:0; border: none;"><t t-esc="l.message"/></pre>
                                 </td>
@@ -672,6 +686,7 @@ http {
                     '"$request" $status $body_bytes_sent '
                     '"$http_referer" "$http_user_agent" $request_time';
     access_log <t t-esc="nginx_dir"/>/access.log full;
+    error_log <t t-esc="nginx_dir"/>/error.log;
     client_body_temp_path <t t-esc="nginx_dir"/>;
     fastcgi_temp_path <t t-esc="nginx_dir"/>;
 
@@ -691,11 +706,18 @@ http {
         location / { proxy_pass http://127.0.0.1:<t t-esc="port"/>; }
         location /longpolling/im/poll { return 404; }
         location /longpolling/poll { return 404; }
+        location /runbot/static/ {
+           alias <t t-esc="runbot_static"/>;
+           autoindex off;
+           location ~ /runbot/static/build/[^/]+/logs/ {
+              autoindex on;
+           }
+        }
     }
     <t t-foreach="builds" t-as="build">
     server {
         listen 8080;
-        server_name ~^<t t-esc="build.dest"/>[-.].*$;
+        server_name ~^<t t-raw="re_escape(build.dest)"/>[-.].*$;
         location / { proxy_pass http://127.0.0.1:<t t-esc="build.port"/>; }
         location /longpolling { proxy_pass http://127.0.0.1:<t t-esc="build.port + 1"/>; }
     }
@@ -756,7 +778,7 @@ http {
         <field name="numbercall">-1</field>
         <field name="doall" eval="False" />
         <field name="model">runbot.repo</field>
-        <field name="function">cron</field>
+        <field name="function">_cron</field>
         <field name="args">()</field>
     </record>
 </data>
